@@ -1,0 +1,715 @@
+---
+title: "WinProbabilityNFL"
+author: "Mike Mistarz"
+date: "2025-07-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+```{r}
+devtools::install_github(repo="maksimhorowitz/nflscrapR")
+library('nflscrapR')
+
+```
+
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(ISAR)
+library(tidyr)
+library(mgcv)
+library(teamcolors)
+library(tidyverse)
+library(nflfastR)
+library(caTools)
+library(tidyverse)
+library(randomForest)
+library(rlang)
+library(glue)
+
+
+```
+
+### Load PBP Data for 2015-2024 Seasons
+```{r}
+ten_seasons <- load_pbp(2015:2024)
+one_season <- load_pbp(2024)
+
+```
+
+### Add win and filter out no down plays
+```{r}
+df <- ten_seasons |>
+  filter(!is.na(down)) |>
+  mutate(win = ifelse(home_score > away_score, 1, 0),
+         pos_home = ifelse(home_team == posteam, 1, 0),
+         pos_win = ifelse((posteam == home_team & result > 0) |
+                            (posteam == away_team & result < 0), 1, 0)
+         )
+
+one_df <- one_season |>
+  filter(!is.na(down)) |>
+  mutate(win = ifelse(home_score > away_score, 1, 0),
+         pos_home = ifelse(home_team == posteam, 1, 0),
+         pos_win = ifelse((posteam == home_team & result > 0) |
+                            (posteam == away_team & result < 0), 1, 0)
+         )
+
+```
+
+### Set Sampling to Create Train/Test/Split
+```{r}
+
+set.seed(10)
+split <- sample(1:nrow(df), 0.75 * nrow(df))
+train <- df[split,]
+test <- df[-split,]
+
+one_split <- sample(1:nrow(one_df), 0.75 * nrow(one_df))
+one_train <- one_df[one_split,]
+one_test <- one_df[-one_split,]
+
+```
+
+### Explore Single Season Models and Use Best one on Ten Seasons
+```{r} 
+
+# Create Models
+one_mod_1_lr <- glm(win ~ down + game_seconds_remaining + ydstogo + yardline_100 + score_differential, one_train, family=binomial())
+
+one_mod_1_rf <- randomForest(as.factor(win) ~ down + game_seconds_remaining + ydstogo + yardline_100 + score_differential, data=one_train, ntree=500)
+
+
+# Model 2
+one_mod_2_lr <- glm(win ~ down + game_seconds_remaining + ydstogo + pos_home + yardline_100 + score_differential, one_train, family=binomial())
+
+one_mod_2_rf <- randomForest(as.factor(win) ~ down + pos_home + game_seconds_remaining + ydstogo + yardline_100 + score_differential, data=one_train, ntree=500)
+
+
+```
+
+### Test First Models
+```{r}
+# Log Reg
+one_test$one_lr_mod_1 <- predict(one_mod_1_lr, one_test, type='response')
+one_lr_mod_1_acc <- mean((one_test$one_lr_mod_1 > 0.5) == one_test$win)
+
+# Random Forest
+one_test$one_rf_mod_1 <- predict(one_mod_1_rf, one_test, type='prob')[,2]
+one_rf_mod_1_acc <- mean((one_test$one_rf_mod_1 > 0.5) == one_test$win)
+
+print('Linear Regression Accuracy: ')
+round(one_lr_mod_1_acc, 3)
+
+summary(one_mod_1_lr)
+
+print("Random Forest Accuracy: ")
+round(one_rf_mod_1_acc, 3)
+importance(one_mod_1_rf)
+
+```
+
+
+```{r}
+# Test Second Models
+
+# Log Reg
+one_test$one_lr_mod_2 <- predict(one_mod_2_lr, one_test, type='response')
+one_lr_mod_2_acc <- mean((one_test$one_lr_mod_2 > 0.5) == one_test$win)
+
+# Random Forest
+one_test$one_rf_mod_2 <- predict(one_mod_2_rf, one_test, type='prob')[,2]
+one_rf_mod_2_acc <- mean((one_test$one_rf_mod_2 > 0.5) == one_test$win)
+
+print('Linear Regression Accuracy: ')
+round(one_lr_mod_2_acc, 3)
+
+summary(one_mod_2_lr)
+
+print("Random Forest Accuracy: ")
+round(one_rf_mod_2_acc, 3)
+importance(one_mod_2_rf)
+
+```
+
+
+```{r}
+# Create Models
+one_mod_3_lr <- glm(win ~ down + (game_seconds_remaining * score_differential) + game_seconds_remaining + ydstogo + yardline_100 + score_differential, one_train, family=binomial())
+
+one_mod_3_rf <- randomForest(as.factor(win) ~ down + (game_seconds_remaining * score_differential) + game_seconds_remaining + ydstogo + yardline_100 + score_differential, data=one_train, ntree=500)
+
+
+# Model 2
+one_mod_4_lr <- glm(win ~ down + game_seconds_remaining + (game_seconds_remaining * score_differential) + ydstogo + pos_home + yardline_100 + score_differential, one_train, family=binomial())
+
+one_mod_4_rf <- randomForest(as.factor(win) ~ down + pos_home + (game_seconds_remaining * score_differential) + game_seconds_remaining + ydstogo + yardline_100 + score_differential, data=one_train, ntree=500)
+
+```
+
+```{r}
+# Test Third Models
+
+# Log Reg
+one_test$one_lr_mod_3 <- predict(one_mod_3_lr, one_test, type='response')
+one_lr_mod_3_acc <- mean((one_test$one_lr_mod_3 > 0.5) == one_test$win)
+
+# Random Forest
+one_test$one_rf_mod_3 <- predict(one_mod_3_rf, one_test, type='prob')[,2]
+one_rf_mod_3_acc <- mean((one_test$one_rf_mod_3 > 0.5) == one_test$win)
+
+print('Linear Regression Accuracy: ')
+round(one_lr_mod_3_acc, 3)
+
+summary(one_mod_3_lr)
+
+print("Random Forest Accuracy: ")
+round(one_rf_mod_3_acc, 3)
+importance(one_mod_3_rf)
+
+```
+
+
+```{r}
+# Test Third Models
+
+# Log Reg
+one_test$one_lr_mod_4 <- predict(one_mod_4_lr, one_test, type='response')
+one_lr_mod_4_acc <- mean((one_test$one_lr_mod_4 > 0.5) == one_test$win)
+
+# Random Forest
+one_test$one_rf_mod_4 <- predict(one_mod_4_rf, one_test, type='prob')[,2]
+one_rf_mod_4_acc <- mean((one_test$one_rf_mod_4 > 0.5) == one_test$win)
+
+print('Linear Regression Accuracy: ')
+round(one_lr_mod_4_acc, 3)
+
+summary(one_mod_4_lr)
+
+print("Random Forest Accuracy: ")
+round(one_rf_mod_4_acc, 3)
+importance(one_mod_4_rf)
+
+```
+
+
+```{r}
+# Create Models
+one_mod_5_lr <- glm(win ~ down + epa + game_seconds_remaining + ydstogo + yardline_100 + score_differential, one_train, family=binomial())
+
+one_mod_5_rf <- randomForest(as.factor(win) ~ down + epa + game_seconds_remaining + ydstogo + yardline_100 + score_differential, data=one_train, ntree=500)
+
+
+# Model 2
+one_mod_6_lr <- glm(win ~ down + game_seconds_remaining + epa + ydstogo + pos_home + yardline_100 + score_differential, one_train, family=binomial())
+
+one_mod_6_rf <- randomForest(as.factor(win) ~ down + pos_home + epa + game_seconds_remaining + ydstogo + yardline_100 + score_differential, data=one_train, ntree=500)
+
+```
+
+
+```{r}
+# Test Third Models
+
+# Log Reg
+one_test$one_lr_mod_5 <- predict(one_mod_5_lr, one_test, type='response')
+one_lr_mod_5_acc <- mean((one_test$one_lr_mod_5 > 0.5) == one_test$win)
+
+# Random Forest
+one_test$one_rf_mod_5 <- predict(one_mod_5_rf, one_test, type='prob')[,2]
+one_rf_mod_5_acc <- mean((one_test$one_rf_mod_5 > 0.5) == one_test$win)
+
+print('Linear Regression Accuracy: ')
+round(one_lr_mod_5_acc, 3)
+
+summary(one_mod_5_lr)
+
+print("Random Forest Accuracy: ")
+round(one_rf_mod_5_acc, 3)
+importance(one_mod_5_rf)
+```
+
+
+```{r}
+# Test Third Models
+
+# Log Reg
+one_test$one_lr_mod_6 <- predict(one_mod_6_lr, one_test, type='response')
+one_lr_mod_6_acc <- mean((one_test$one_lr_mod_6 > 0.5) == one_test$win)
+
+# Random Forest
+one_test$one_rf_mod_6 <- predict(one_mod_6_rf, one_test, type='prob')[,2]
+one_rf_mod_6_acc <- mean((one_test$one_rf_mod_6 > 0.5) == one_test$win)
+
+print('Linear Regression Accuracy: ')
+round(one_lr_mod_6_acc, 3)
+
+summary(one_mod_6_lr)
+
+print("Random Forest Accuracy: ")
+round(one_rf_mod_6_acc, 3)
+importance(one_mod_6_rf)
+```
+
+```{r}
+# Model 7
+one_mod_7_lr <- glm(win ~ as.factor(qtr) + down + game_seconds_remaining + ydstogo + pos_home  + yardline_100 + score_differential, one_train, family=binomial())
+
+one_mod_7_rf <- randomForest(as.factor(win) ~ down + pos_home + qtr + game_seconds_remaining + ydstogo + yardline_100 + score_differential, data=one_train, ntree=500)
+
+
+```
+
+
+```{r}
+# Test Seventh Models
+
+# Log Reg
+one_test$one_lr_mod_7 <- predict(one_mod_7_lr, one_test, type='response')
+one_lr_mod_7_acc <- mean((one_test$one_lr_mod_7 > 0.5) == one_test$win)
+
+# Random Forest
+one_test$one_rf_mod_7 <- predict(one_mod_7_rf, one_test, type='prob')[,2]
+one_rf_mod_7_acc <- mean((one_test$one_rf_mod_7 > 0.5) == one_test$win)
+
+print('Linear Regression Accuracy: ')
+round(one_lr_mod_7_acc, 3)
+
+summary(one_mod_7_lr)
+
+print("Random Forest Accuracy: ")
+round(one_rf_mod_7_acc, 3)
+importance(one_mod_7_rf)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# Create First Models
+
+# Linear Regression Model
+mod_1_lr <- glm(as.factor(win) ~ down + ydstogo + yardline_100 + game_seconds_remaining + score_differential, train, family="binomial")
+```
+
+```{r}
+# Random Forest Model
+mod_1_rf <- randomForest(as.factor(win) ~ down + ydstogo + yardline_100 + game_seconds_remaining + score_differential, data=train, ntree=500)
+
+
+```
+
+### Check Model Accuracies and Summaries
+```{r}
+# Log Reg
+test$lr_mod_1 <- predict(mod_1_lr, test, type='response')
+lr_mod_1_acc <- mean((test$lr_mod_1 > 0.5) == test$win)
+
+# Random Forest
+test$rf_mod_1 <- predict(mod_1_rf, test, type='prob')[,2]
+rf_mod_1_acc <- mean((test$rf_mod_1 > 0.5) == test$win)
+
+print('Linear Regression Accuracy: ')
+round(lr_mod_1_acc, 3)
+
+summary(mod_1_lr)
+
+print("Random Forest Accuracy: ")
+round(rf_mod_1_acc, 3)
+importance(mod_1_rf)
+
+```
+
+
+```{r}
+# Create First Models
+
+# Linear Regression Model
+mod_2_lr <- glm(win ~ down + ydstogo + yardline_100 + game_seconds_remaining + score_differential + pos_home, train, family=binomial()) 
+
+# Random Forest Model
+mod_2_rf <- randomForest(as.factor(win) ~ down + ydstogo + pos_home + yardline_100 + game_seconds_remaining + score_differential, data=train, ntree=500)
+
+
+```
+
+### Use Model 2 and Build WP Models
+```{r}
+# Log Reg
+test$lr_mod_2 <- predict(mod_2_lr, test, type='response')
+lr_mod_2_acc <- mean((test$lr_mod_2 > 0.5) == test$win)
+
+# Random Forest
+test$rf_mod_2 <- predict(mod_2_rf, test, type='prob')[,2]
+rf_mod_2_acc <- mean((test$rf_mod_2 > 0.5) == test$win)
+
+print('Linear Regression Accuracy: ')
+round(lr_mod_2_acc, 3)
+
+summary(mod_2_lr)
+
+print("Random Forest Accuracy: ")
+round(rf_mod_2_acc, 3)
+importance(mod_2_rf)
+
+```
+
+
+```{r}
+
+win_probability_lr <- function(model, down, ydstogo, yardline_100, pos_home, game_seconds_remaining, score_differential, ...) {
+  wp_dataframe <- data.frame(
+    down = down,
+    game_seconds_remaining = game_seconds_remaining,
+    ydstogo = ydstogo,
+    pos_home = pos_home,
+    score_differential = score_differential,
+    yardline_100 = yardline_100
+  )
+  problem <- predict(model, wp_dataframe, type='response')
+  return(problem)
+}
+
+win_probability_rf <- function(model, down, ydstogo, yardline_100, pos_home, game_seconds_remaining, score_differential, ...) {
+  wp_dataframe <- data.frame(
+    down = down,
+    game_seconds_remaining = game_seconds_remaining,
+    ydstogo = ydstogo,
+    pos_home = pos_home,
+    score_differential = score_differential,
+    yardline_100 = yardline_100
+  )
+  problem <- predict(model, wp_dataframe, type='prob')[,2]
+  return(problem)
+}
+
+
+```
+
+```{r}
+game1 <- one_df |>
+  filter(game_id == '2024_02_ATL_PHI')
+
+game2 <- one_df |>
+  filter(game_id == "2024_08_CHI_WAS")
+
+game3 <- one_df |>
+  filter(game_id == '2024_10_CIN_BAL')
+
+game4 <- one_df |>
+  filter(game_id == '2024_01_TEN_CHI')
+
+# Game 1 Models
+game1$test_wp_lr <- win_probability_lr(mod_2_lr, game1$down, game1$ydstogo, game1$yardline_100, game1$pos_home, game1$game_seconds_remaining, game1$score_differential)
+
+game1$test_wp_rf <- win_probability_rf(mod_2_rf, game1$down, game1$ydstogo, game1$yardline_100, game1$pos_home, game1$game_seconds_remaining, game1$score_differential)
+
+game2$test_wp_lr <- win_probability_lr(mod_2_lr, game2$down, game2$ydstogo, game2$yardline_100, game2$pos_home, game2$game_seconds_remaining, game2$score_differential)
+
+game2$test_wp_rf <- win_probability_rf(mod_2_rf, game2$down, game2$ydstogo, game2$yardline_100, game2$pos_home, game2$game_seconds_remaining, game2$score_differential)
+
+game3$test_wp_lr <- win_probability_lr(mod_2_lr, game3$down, game3$ydstogo, game3$yardline_100, game3$pos_home, game3$game_seconds_remaining, game3$score_differential)
+
+game3$test_wp_rf <- win_probability_rf(mod_2_rf, game3$down, game3$ydstogo, game3$yardline_100, game3$pos_home, game3$game_seconds_remaining, game3$score_differential)
+
+
+game4$test_wp_lr <- win_probability_lr(mod_2_lr, game4$down, game4$ydstogo, game4$yardline_100, game4$pos_home, game4$game_seconds_remaining, game4$score_differential)
+
+
+game4$test_wp_rf <- win_probability_rf(mod_2_rf, game4$down, game4$ydstogo, game4$yardline_100, game4$pos_home, game4$game_seconds_remaining, game4$score_differential)
+
+```
+
+
+```{r}
+create_wp_plot <- function(game_data, col1, col2) {
+  home_team <- head(game_data$home_team, 1)
+  away_team <- head(game_data$away_team, 1)
+  week <- head(game_data$week, 1)
+  color1 <- c('Random Forest Model'='red')
+
+  p <- ggplot(game_data, aes(x=3600 - game_seconds_remaining))
+  p + geom_line(aes(x=3600-game_seconds_remaining, y=col2, color='Random Forest Model'), linetype=2) +
+    geom_point(aes(y=col2, color='Random Forest Model')) +
+    scale_y_continuous(limits=c(0,1)) +
+  scale_x_continuous(limits=c(0, 3600), breaks=seq(0, 3600, 900)) +
+  labs(x='Game Time (s)',
+       y=glue('Win Probability {home_team}'),
+       title = glue('Win Probability 2024 Week {week}: {away_team} @ {home_team}'),
+       color='Legend') +
+  scale_color_manual(values=color1) +
+  theme(legend.position='top')
+}
+
+
+
+
+create_wp_vs_nflreadr_plot <- function(game_data, col1, col2) {
+  home_team <- head(game_data$home_team, 1)
+  away_team <- head(game_data$away_team, 1)
+  week <- head(game_data$week, 1)
+  color1 <- c('NFLreadR Win Probability'='black', 'Random Forest Win Probability'='red')
+
+  p <- ggplot(game_data, aes(x=3600 - game_seconds_remaining))
+  p + geom_line(aes(x=3600-game_seconds_remaining, y=col1, color='NFLreadR Win Probability'), linetype=2) +
+    geom_point(aes(y=col1, color='NFLreadR Win Probability')) +
+    geom_line(aes(x=3600-game_seconds_remaining, y=col2, color='Random Forest Win Probability'), linetype=2) +
+    geom_point(aes(y=col2, color='Random Forest Win Probability')) +
+    scale_y_continuous(limits=c(0,1)) +
+  scale_x_continuous(limits=c(0, 3600), breaks=seq(0, 3600, 900)) +
+  labs(x='Game Time (s)',
+       y=glue('Win Probability {home_team}'),
+       title = glue('Win Probability 2024 Week {week}: {away_team} @ {home_team}'),
+       color='Legend') +
+  scale_color_manual(values=color1) +
+  theme(legend.position='top')
+}
+
+create_wp_plot_highlighted <- function(game_data, col1, col2, values) {
+  home_team <- head(game_data$home_team, 1)
+  away_team <- head(game_data$away_team, 1)
+  week <- head(game_data$week, 1)
+  highlighted <- game_data |>
+    filter(game_seconds_remaining %in% values)
+
+  color1 <- c('Random Forest Model'='red', 'Plays of Interest'='forestgreen')
+
+  p <- ggplot(game_data, aes(x=3600 - game_seconds_remaining))
+  p + geom_line(aes(x=3600-game_seconds_remaining, y=col2, color='Random Forest Model'), linetype=2) +
+    geom_point(aes(y=col2, color='Random Forest Model')) +
+    geom_point(data=highlighted, aes(y=test_wp_rf, color='Plays of Interest')) +
+    scale_y_continuous(limits=c(0,1)) +
+  scale_x_continuous(limits=c(0, 3600), breaks=seq(0, 3600, 900)) +
+  labs(x='Game Time (s)',
+       y=glue('Win Probability {home_team}'),
+       title = glue('Win Probability 2024 Week {week}: {away_team} @ {home_team}'),
+       color='Legend') +
+  scale_color_manual(values=color1) +
+  theme(legend.position='top')
+}
+
+
+
+
+```
+
+
+```{r}
+create_wp_plot_highlighted(game4, game4$test_wp_lr, game4$test_wp_rf, c(3117, 3069, 3064, 3033, 3026, 2788,2747, 1839, 1835, 1830, 714, 465))
+```
+
+```{r}
+create_wp_vs_nflreadr_plot(game1, game1$home_wp, game1$test_wp_rf)
+create_wp_vs_nflreadr_plot(game2, game2$home_wp, game2$test_wp_rf)
+create_wp_vs_nflreadr_plot(game3, game3$home_wp, game3$test_wp_rf)
+create_wp_vs_nflreadr_plot(game4, game4$home_wp, game4$test_wp_rf)
+
+```
+
+
+```{r}
+game_5 <- one_df |>
+  filter(game_id == '2024_18_CHI_GB')
+
+
+
+game_5$test_wp_rf <- win_probability_rf(mod_2_rf, game_5$down, game_5$ydstogo, game_5$yardline_100, game_5$pos_home, game_5$game_seconds_remaining, game_5$score_differential)
+create_wp_vs_nflreadr_plot(game_5, game_5$home_wp, game_5$test_wp_rf)
+
+```
+
+
+
+```{r}
+take_out_ot <- train |> filter(qtr != 5)
+p5 <- ggplot(data=take_out_ot, aes(x=down)) +
+  geom_bar() +
+  labs(title='Plays Run by Down 2015-2024')
+
+p6 <- ggplot(data=take_out_ot, aes(x=pos_home)) +
+  geom_bar() +
+  labs(title='Home Possession 2015-2024')
+
+```
+
+
+```{r}
+
+p1 <- ggplot(data=take_out_ot, aes(x=ydstogo)) +
+  geom_bar() +
+  labs(title='Yards To Go Per Play 2015-2024')
+
+p2 <- ggplot(data=take_out_ot, aes(x=home_score - away_score)) +
+  geom_bar() +
+  labs(title='Score Differential by Play 2015-2024')
+
+p3 <- ggplot(data=take_out_ot, aes(x=game_seconds_remaining)) +
+  geom_bar() +
+  labs(title='Game Seconds Remaining 2015-2024')
+
+p4 <- ggplot(data=take_out_ot, aes(x=yardline_100)) +
+  geom_bar() +
+  labs(title='Yards to Endzone per Play 2015-2024')
+
+```
+
+
+
+
+```{r}
+result <- aggregate(test$rf_mod_2, by = list(test$yardline_100), FUN = mean)
+ colnames(result) <- c("YardsToEndZone", "RandomForestWP")
+
+ 
+p44 <-  ggplot(result, aes(x=YardsToEndZone, y=RandomForestWP)) +
+  geom_line() +
+  labs(x='Yards To End Zone',
+       y='Random Forest WP',
+       title='RF Win Prob by Field Position')
+
+result <- aggregate(test$rf_mod_2, by = list(test$down), FUN = mean)
+ colnames(result) <- c("Down", "RandomForestWP")
+
+ 
+p55 <- ggplot(result, aes(x=Down, y=RandomForestWP)) +
+  geom_col() +
+  labs(x='Down',
+       y='Random Forest WP',
+       title='RF Win Prob by Down')
+
+result <- aggregate(test$rf_mod_2, by = list(test$home_score - test$away_score), FUN = mean)
+ colnames(result) <- c("ScoreDifferential", "RandomForestWP")
+
+ 
+p22<- ggplot(result, aes(x=ScoreDifferential, y=RandomForestWP)) +
+  geom_line() + geom_point() +
+  labs(x='Score Differential',
+       y='Random Forest WP',
+       title='RF Win Prob by Score Differential')
+
+result <- aggregate(test$rf_mod_2, by = list(test$ydstogo), FUN = mean)
+ colnames(result) <- c("YdsToGo", "RandomForestWP")
+
+ 
+p11<- ggplot(result, aes(x=YdsToGo, y=RandomForestWP)) +
+  geom_line() +
+  labs(x='Yards To Go For First Down',
+       y='Random Forest WP',
+       title='RF Win Prob by Yards To Go')
+
+result <- aggregate(test$rf_mod_2, by = list(test$game_seconds_remaining), FUN = mean)
+ colnames(result) <- c("GameSecondsRemaining", "RandomForestWP")
+
+ 
+p33 <- ggplot(result, aes(x=GameSecondsRemaining, y=RandomForestWP)) +
+  geom_line() +
+  labs(x='Game Seconds Remaining',
+       y='Random Forest WP',
+       title='RF Win Prob by Game Seconds Remaining')
+
+
+result <- aggregate(test$rf_mod_2, by = list(test$pos_home), FUN = mean)
+ colnames(result) <- c("HomePos", "RandomForestWP")
+
+ 
+p66 <- ggplot(result, aes(x=HomePos, y=RandomForestWP)) +
+  geom_col() +
+  labs(x='Home Possession',
+       y='Random Forest WP',
+       title='RF Win Prob by Home Possession')
+```
+
+```{r}
+library(patchwork)
+
+p1 + p11
+p2 + p22
+p3 + p33
+p4 + p44
+p5 + p55
+p6 + p66
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

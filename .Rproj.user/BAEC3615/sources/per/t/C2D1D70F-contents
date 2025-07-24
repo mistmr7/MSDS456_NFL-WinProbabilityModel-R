@@ -1,0 +1,102 @@
+---
+title: "Quiz4"
+author: "Mike Mistarz"
+date: "2025-07-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(ISAR)
+library(tidyr)
+library(mgcv)
+library(teamcolors)
+
+```
+
+```{r}
+install.packages(nflfastR)
+install.packages("NFLSimulatoR")
+install.packages(nflreadr)
+library(nflfastR)
+library(NFLSimulatoR)
+library(nflreadr)
+```
+
+```{r}
+week_13_ids <- fast_scraper_schedules(2022) |>
+  filter(week == 13)
+tc <- teamcolors |>
+  filter(name %in% c('Kansas City Chiefs', 'Cincinnati Bengals')) |>
+  mutate(team = ifelse(name == 'Kansas City Chiefs', 'KC', 'CIN'))
+
+kc_at_cin_pbp <- week_13_ids |>
+  filter(home_team == 'CIN') |>
+  pull(game_id) |>
+  fast_scraper()
+
+kc_at_cin_pbp_tc <- kc_at_cin_pbp |>
+  mutate(team = ifelse(home_wp < 0.5, 'KC', 'CIN')) |>
+  left_join(tc, by='team') |>
+  filter(!is.na(team))
+
+p <- ggplot(data = kc_at_cin_pbp_tc,
+            aes(x = 3600 - game_seconds_remaining,
+                y = home_wp,
+                col = name))
+
+p + geom_line(col = 'darkgrey', linetype = 2) +
+  geom_point() +
+  scale_color_teams() +
+  scale_y_continuous(limits = c(0,1)) +
+  scale_x_continuous(limits = c(0,3600),
+                     breaks = seq(0, 3600, by = 900),
+                     labels = c('Q1', 'Q2', 'Q3', 'Q4', 'FT')) +
+  labs(
+    x = 'time in game (s)',
+    y = 'CIN win probability',
+    title = 'Win Prability: KC @ CIN, week 13 2022'
+  ) + 
+  guides(col='none') +
+  theme_bw()
+
+```
+
+
+```{r}
+
+
+kc_at_cin_pbp_tc$home_team_color = '#000000'
+kc_at_cin_pbp_tc$away_team_color = '#e31837'
+
+
+p <- ggplot(data = kc_at_cin_pbp_tc,
+            aes(x = 3600 - game_seconds_remaining,
+                y=home_wp))
+
+p + geom_line(color = kc_at_cin_pbp_tc$home_team_color) +
+  geom_line(aes(x = 3600 - game_seconds_remaining,
+                y = away_wp),
+            color = kc_at_cin_pbp_tc$away_team_color) +
+  scale_y_continuous(limits = c(0,1)) +
+  scale_x_continuous(limits = c(0, 3600),
+                     breaks = seq(0, 3600, by = 900),
+                     labels = c('Q1', 'Q2', 'Q3', 'Q4', 'FT')) +
+  labs(
+    x = 'time in game',
+    y = 'win probability',
+    title = 'Win Probability: KC @ CIN, week 13 2022'
+  ) + 
+  guides(col = 'none') +
+  theme_bw()
+
+
+
+
+```

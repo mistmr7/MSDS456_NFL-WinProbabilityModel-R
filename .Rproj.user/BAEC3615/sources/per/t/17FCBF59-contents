@@ -1,0 +1,587 @@
+---
+title: "Coding Assignment 1 - MSDS-4560"
+date: "July 13, 2025"
+Author: "Mike Mistarz"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+plot(cars)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+```{r}
+
+library(dplyr)
+library(ggplot2)
+library(Lahman)
+remotes::install_github("BillPetti/baseballr")
+library(ggcorrplot)
+library(broom)
+library(baseballr)
+library(lubridate)
+library(mgcv)
+
+```
+
+## Scenario 1 - Exit Velocity By Pitch
+
+### Create a visual that summarizes the exit velocity separated by pitch type
+### and grouped by the 2023 and 2024 seasons. The plot will be like Figure 4.16
+### but will include a separate density plot for each year ### **within a pitch type.
+### Be sure that you have a proper title, x and y axis labels, and the full name
+### for each pitch as opposed to the abbreviations
+### (i.e., “Four-seam Fastball” as opposed to FF).**
+
+
+```{r}
+# Look up Elly De La Cruz hitting stats for 2023 and 2024
+delacruz_id <- playerid_lookup(last_name='De La Cruz', first_name='Elly')$mlbam_id
+delacruz_df_2023 = scrape_statcast_savant(start_date=ymd("2023-03-30"), end_date=ymd("2023-10-01"), playerid=delacruz_id)
+delacruz_df_2024 = scrape_statcast_savant(start_date=ymd("2024-03-30"), end_date=ymd("2024-10-01"), playerid=delacruz_id)
+
+```
+
+
+```{r}
+# Create pitch type list
+pitch_types = c('CH',
+  'CU',
+  'FC',
+  'FF',
+  'SI',
+  'SL',
+  'FS',
+  'AB',
+  'AS',
+  'EP',
+  'FO',
+  'FT',
+  'GY',
+  'IN',
+  'KC',
+  'KN',
+  'NP',
+  'PO',
+  'SC', 
+  'UN'
+)
+# Create Pitch Name List
+pitch_names <- c('Changeup',
+  'Curveball',
+  'Cutter',
+  'Four-seam Fastball',
+  'Sinker',
+  'Slider',
+  'Splitter',
+  'Automatic Ball',
+  'Automatic Strike',
+  'Eephus',
+  'Forkball',
+  'Two-seam Fastball',
+  'Gyroball',
+  'Intentional Ball',
+  'Knuckle Curve',
+  'Knuckleball',
+  'No Pitch',
+  'Pitchout',
+  'Screwball', 
+  'Unknown'
+)
+# Add pitch types and pitch names to a dataframe
+pitch_df <- data.frame(pitch_type=pitch_types, pitch_names=pitch_names)
+# Add full pitch name to dataframe corresponding to DeLaCruz 2023 and 2024
+df_2023 <- merge(delacruz_df_2023, pitch_df, by='pitch_type')
+df_2024 <- merge(delacruz_df_2024, pitch_df, by='pitch_type')
+
+# Create the plots for 2023
+p_2023 <- df_2023 |>
+  filter(type=='X') |>
+  ggplot(aes(x=launch_speed))
+
+p_2023 + geom_density(alpha=0.5, fill='gray40') +
+  facet_wrap(. ~ pitch_names, ncol=3) +
+  labs(title="Elly De La Cruz's Exit Velocity by Pitch Type in 2023",
+       x='Pitch Type',
+       y='Exit Velocity (mph)') +
+  scale_y_continuous(breaks = seq(60, 150, by=10)) +
+  theme_bw()
+
+p_2024 <- df_2024 |>
+  filter(type=='X') |>
+  ggplot(aes(x=launch_speed))
+
+p_2024 + geom_density(alpha=0.5, fill='gray40') +
+  facet_wrap(. ~ pitch_names, ncol=3) +
+  labs(title="Elly De La Cruz's Exit Velocity by Pitch Type in 2024",
+       x='Pitch Type',
+       y='Exit Velocity (mph)') +
+  scale_y_continuous(breaks = seq(60, 130, by=10),) +
+  theme_bw()
+
+```
+
+
+```{r}
+library(plyr)
+library(dplyr)
+library(knitr)
+library(ggplot2)
+
+# Create Table for 2023 Data
+df_mean_2023 <- df_2023 |>
+  filter(type=='X') |>
+  select(type, pitch_type, pitch_names, launch_angle, launch_speed)
+mean_2023 <- ddply(na.omit(df_mean_2023), .(pitch_names), summarize, mean_launch_angle=mean(launch_angle), mean_launch_speed=mean(launch_speed), max_launch_speed=max(launch_speed))
+
+count_2023 <- df_2023 |>
+  filter(type=='X') |>
+  select(type, pitch_type, pitch_names)
+count_2023 <- count(count_2023, pitch_names)
+count_2023_final <- merge(count_2023, mean_2023, by='pitch_names')
+kable(count_2023_final, caption='2023 Launch Velocities by Pitch Type')
+
+
+# Create Table for 2024 Data
+df_mean_2024 <- df_2024 |>
+  filter(type=='X') |>
+  select(type, pitch_type, pitch_names, launch_angle, launch_speed)
+mean_2024 <- ddply(na.omit(df_mean_2024), .(pitch_names), summarize, mean_launch_angle=mean(launch_angle), mean_launch_speed=mean(launch_speed), max_launch_speed=max(launch_speed))
+
+count_2024 <- df_2024 |>
+  filter(type=='X') |>
+  select(type, pitch_type, pitch_names)
+count_2024 <- count(count_2024, pitch_names)
+count_2024_final <- merge(count_2024, mean_2024, by='pitch_names')
+kable(count_2024_final, caption='2024 Launch Velocities by Pitch Type')
+
+
+# Create barchart of pitcch types 2023
+df_2023_grouped <- df_2023 |>
+  group_by(pitch_names) |>
+  summarize(perc = n()/nrow(df_2023)) |>
+  arrange(desc(-perc)) |>
+  mutate(pitch_names=(factor(pitch_names, pitch_names)))
+
+p_grouped_2023 <- ggplot(df_2023_grouped,
+                         aes(x=pitch_names, y=perc))
+p_grouped_2023 + geom_bar(stat='identity', fill='gray40') +
+  scale_y_continuous(labels=scales::percent) +
+  coord_flip() +
+  labs(title='Types of Pitches Thrown to Elly De La Cruz in 2023',
+       x='Pitch Type',
+       y='Proportion of Pitches') +
+  theme_bw()
+
+
+# Create barchart of pitch types 2024
+df_2024_grouped <- df_2024 |>
+  group_by(pitch_names) |>
+  summarize(perc = n()/nrow(df_2024)) |>
+  arrange(desc(-perc)) |>
+  mutate(pitch_names=(factor(pitch_names, pitch_names)))
+
+p_grouped_2024 <- ggplot(df_2024_grouped,
+                         aes(x=pitch_names, y=perc))
+p_grouped_2024 + geom_bar(stat='identity', fill='gray40') +
+  scale_y_continuous(labels=scales::percent) +
+  coord_flip() +
+  labs(title='Types of Pitches Thrown to Elly De La Cruz in 2024',
+       x='Pitch Type',
+       y='Proportion of Pitches') +
+  theme_bw()
+```
+
+
+#### Q1 **Which pitch saw the largest difference in average exit velocities between years?**
+#### **What was the difference?**
+
+As can be seen in the plots 2 chunks above and the tables created in the chunk
+above, technically the eephus pitch and the knuckleball saw the largest increase
+in launch velocity, as neither of those pitches were hit into play in 2023.
+Ignoring those two pitches, the knuckle curve was hit with an average exit
+velocity 7.3 mph higher in 2024 than in 2023.
+
+#### Q2 **Which pitch was seen most often in 2023 and 2024?**
+
+From the tables created in the chunk above, Elly hit the most changeups in 2023
+and the most fastballs in 2024. Looking at the bar charts for both years also
+created in the chunk above, Elly saw the most four seam fastballs in both seasons
+though he saw about 7 percent more in 2024 than in 2023. I am curious to know if
+pitchers saw that he connected on more changeups than fastballs and adjusted
+accordingly.
+
+## Scenario 2
+
+### Create a table that summarizes the average exit velocity, average launch angle,
+### and frequency of occurrence for each unique event for both 2023 and 2024.
+### Ensure that you have a proper title.
+
+```{r}
+library(plyr)
+library(knitr)
+library(gt)
+# Build Elly De La Cruz 2023 launch angle and launch speed table by event type
+trunc_2023_df <- delacruz_df_2023 |>
+  filter(type=='X') |>
+  select(type, events, launch_angle, launch_speed)
+count_2023 <- count(trunc_2023_df, events)
+trunc_2023 <- ddply(na.omit(trunc_2023_df), .(events), summarize, launch_angle=mean(launch_angle), launch_speed=mean(launch_speed))
+final_2023 <- merge(count_2023, trunc_2023, by='events')
+final_2023$probability <- round(final_2023$n/sum(final_2023$n), 3)
+kable(final_2023, caption='2023 Summary Table Elly De La Cruz')
+gt(final_2023) |>
+  tab_header(title=md('2023 Summary Table Elly De La Cruz using GT'))
+
+# repeat for 2024 season
+trunc_2024_df <- delacruz_df_2024 |>
+  filter(type=='X') |>
+  select(type, events, launch_angle, launch_speed)
+count_2024 <- count(trunc_2024_df, events)
+trunc_2024 <- ddply(na.omit(trunc_2024_df), .(events), summarize, launch_angle=mean(launch_angle), launch_speed=mean(launch_speed))
+final_2024 <- merge(count_2024, trunc_2024)
+final_2024$probability <- round(final_2024$n/sum(final_2024$n), 3)
+kable(final_2024, caption='2024 Summary Table Elly De La Cruz')
+gt(final_2024) |>
+  tab_header(title=md('2024 Summary Table Elly De La Cruz using GT'))
+
+```
+
+#### Q1 **Which event occurred most often?**
+
+For both seasons, the most common event type was a field out. This event occurred
+50.8 percent of the time for 125 outs in 2023 and 51.0 percent of the time for 
+205 outs in 2024. 
+
+#### **Q2 Which event had the highest average exit velocity?**
+
+The highest exit velocity for both seasons was on home runs,
+with a launch speed of 109.7 mph in 2023 and 107.6 mph in 2024.
+
+
+### Create a visual like Figure 4.23 that summarizes the density of exit velocities for
+### 2023 and 2024. Be sure that you have a proper title, x and y axis labels, and a legend.  
+ 
+```{r}
+# Creating Exit Velocity Visuals
+p_ev_2023 <-ggplot(data=delacruz_df_2023 |>
+                     filter(type=='X') |>
+                     select(type, events, launch_speed, pitch_type),
+                   aes(x=launch_speed))
+p_ev_2023 + geom_density() +
+  labs(title="Elly De La Cruz's Exit Velocity Frequency 2023",
+       x='Launch Speed',
+       y='Density') +
+theme_bw()
+
+p_ev_2024 <-ggplot(data=delacruz_df_2024 |>
+                     filter(type=='X') |>
+                     select(type, events, launch_speed, pitch_type),
+                   aes(x=launch_speed))
+p_ev_2024 + geom_density() +
+  labs(title="Elly De La Cruz's Exit Velocity Frequency 2024",
+       x='Launch Speed',
+       y='Density') +
+theme_bw()
+
+```
+
+## Scenario 3 - Swing Probabilities
+
+### Create a visual like 4.28 that summarizes all hit-by-pitch for 2023 and 2024.
+### Be sure that you have a proper title and x and y axis labels.
+
+```{r}
+# Create Hit By Pitch Visuals
+plate_width <- 17 + 2 * (9/pi)
+
+p_hbp_2023 <- delacruz_df_2023 |>
+  filter(description=='hit_by_pitch') |>
+  ggplot(aes(x=plate_x, y=plate_z))
+
+p_hbp_2023 + geom_point() +
+  geom_rect(xmin = -(plate_width/2)/12,
+            xmax=plate_width/2/12,
+            ymin=1.5,
+            ymax=3.6,
+            alpha=0,
+            lwd=0.7,
+            col='black') +
+  labs(title='Elly De La Cruz HBP Pitch Locations 2023',
+       x='horizontal location (ft)',
+       y='vertical location (ft)') +
+  xlim(-4,4) +
+  ylim(0,5) +
+  coord_fixed() +
+  theme_bw()
+
+p_hbp_2024 <- delacruz_df_2024 |>
+  filter(description=='hit_by_pitch') |>
+  ggplot(aes(x=plate_x, y=plate_z))
+
+p_hbp_2024 + geom_point() +
+  geom_rect(xmin = -(plate_width/2)/12,
+            xmax=plate_width/2/12,
+            ymin=1.5,
+            ymax=3.6,
+            alpha=0,
+            lwd=0.7,
+            col='black') +
+  labs(title='Elly De La Cruz HBP Pitch Locations 2024',
+       x='horizontal location (ft)',
+       y='vertical location (ft)') +
+  xlim(-4,4) +
+  ylim(0,5) +
+  coord_fixed() +
+  theme_bw()
+
+```
+#### Q1  **Discuss at least one key difference between the two years.**
+
+For the HBP Plots, Elly De La Cruz was hit 3 times more often in 2024 than
+2023, and he was hit on both sides of the plates in 2024 but only on the left
+side of the plate in 2023.
+
+### Create two visuals (like the one on pg. 72) that produce a heat map summarizing
+### swing probabilities for the 2023 and 2024 seasons separately. be sure that you
+### have a proper title and x and y axis labels for each plot.
+
+
+```{r}
+# Create Heat Map visuals summarizing swing probabilities
+
+library(mgcv)
+delacruz_df_2023 <- delacruz_df_2023 |>
+  mutate(swing = ifelse(description %in%
+                          c('ball', 'blocked_ball',
+                            'automatic_ball', 'called_strike',
+                            'hit_by_pitch'), 0, 1))
+
+
+swing_gam_2023 <- gam(swing ~ s(plate_x) + s(plate_z),
+                      family=binomial,
+                      data=delacruz_df_2023)
+swing_predict_2023 <- expand.grid(plate_x=seq(-1.5, 1.5, length=50),
+                                  plate_z = seq(0.5, 5, length=50))
+swing_preds_2023 <- predict(swing_gam_2023,
+                            newdata=swing_predict_2023,
+                            type='response')
+swing_predict_2023 <- swing_predict_2023 |>
+  mutate(swing_prob=swing_preds_2023)
+
+p_sp_2023 <- ggplot(data=swing_predict_2023,
+                    aes(x=plate_x, y=plate_z))
+
+p_sp_2023 + geom_tile(aes(fill=swing_prob)) +
+  scale_fill_distiller("P(Swing)",
+                       palette='Spectral',
+                       direction=-1,
+                       limit=c(0,1)) +
+  geom_rect(xmin = -(plate_width/2)/12,
+            xmax=plate_width/2/12,
+            ymin=1.5,
+            ymax=3.6,
+            alpha=0,
+            lwd=0.7,
+            col='black') +
+  labs(title='Elly De La Cruz Swing Probability 2023',
+       x='horizontal location (ft)',
+       y='vertical location (ft)') +
+  coord_fixed() +
+  theme_bw()
+
+
+delacruz_df_2024 <- delacruz_df_2024 |>
+  mutate(swing = ifelse(description %in%
+                          c('ball', 'blocked_ball',
+                            'automatic_ball', 'called_strike',
+                            'hit_by_pitch'), 0, 1))
+
+
+swing_gam_2024 <- gam(swing ~ s(plate_x) + s(plate_z),
+                      family=binomial,
+                      data=delacruz_df_2024)
+swing_predict_2024 <- expand.grid(plate_x=seq(-1.5, 1.5, length=50),
+                                  plate_z = seq(0.5, 5, length=50))
+swing_preds_2024 <- predict(swing_gam_2024,
+                            newdata=swing_predict_2024,
+                            type='response')
+swing_predict_2024 <- swing_predict_2024 |>
+  mutate(swing_prob=swing_preds_2024)
+
+p_sp_2024 <- ggplot(data=swing_predict_2024,
+                    aes(x=plate_x, y=plate_z))
+
+p_sp_2024 + geom_tile(aes(fill=swing_prob)) +
+  scale_fill_distiller("P(Swing)",
+                       palette='Spectral',
+                       direction=-1,
+                       limit=c(0,1)) +
+  geom_rect(xmin = -(plate_width/2)/12,
+            xmax=plate_width/2/12,
+            ymin=1.5,
+            ymax=3.6,
+            alpha=0,
+            lwd=0.7,
+            col='black') +
+  labs(title='Elly De La Cruz Swing Probability 2024',
+       x='horizontal location (ft)',
+       y='vertical location (ft)') +
+  coord_fixed() +
+  theme_bw()
+
+```
+#### Q1  **Discuss at least one key difference between the two years.**
+
+From the swing probability visuals, Elly De La Cruz's hottest zone lengthened
+vertically in 2024 compared to 2023 and he laid off the inside and outside corner
+more often in 2024 as well. His hot zone in 2023 almost was fully encompassed
+within the strike zone in 2023, with a slight dip below the zone at the bottom.
+In 2024, the zone is thinner and taller, stretching higher and lower than the
+top and bottom of the zone.
+
+
+### Create three visuals that summarize swing probabilities for Fastballs (FF, FT),
+### Breaking Balls (CU, FC, SL), and Off-speed pitches (CH, FO, FS, SI, KN, KC, GY)
+### combined for both 2023 and 2024. Be sure that you have a proper title and x
+### and y axis labels for each plot. Include the total number of pitches seen for
+### each group in the title.
+
+
+```{r}
+# Concatenate the dataframes
+df_total <- rbind(delacruz_df_2023, delacruz_df_2024)
+
+# Filter out Fastballs
+df_total_fastballs <- df_total |>
+  filter(pitch_type %in% c('FF', 'FT'))
+
+# Filter out Breaking Balls
+df_total_breaking_balls <- df_total |>
+  filter(pitch_type %in% c('CU', 'FC', 'SL'))
+
+# Filter out off speed pitches
+df_total_off_speeds <- df_total |>
+  filter(pitch_type %in% c('CH', 'FO', 'FS', 'SI', 'KN', 'KC', 'GY'))
+
+# Create Plot for Fastballs
+swing_gam_fast <- gam(swing ~ s(plate_x) + s(plate_z),
+                      family=binomial,
+                      data=df_total_fastballs)
+swing_predict_fast <- expand.grid(plate_x=seq(-1.5, 1.5, length=50),
+                                  plate_z = seq(0.5, 5, length=50))
+swing_preds_fast <- predict(swing_gam_fast,
+                            newdata=swing_predict_fast,
+                            type='response')
+swing_predict_fast <- swing_predict_fast |>
+  mutate(swing_prob=swing_preds_fast)
+
+p_sp_fast <- ggplot(data=swing_predict_fast,
+                    aes(x=plate_x, y=plate_z))
+
+p_sp_fast + geom_tile(aes(fill=swing_prob)) +
+  scale_fill_distiller("P(Swing)",
+                       palette='Spectral',
+                       direction=-1,
+                       limit=c(0,1)) +
+  geom_rect(xmin = -(plate_width/2)/12,
+            xmax=plate_width/2/12,
+            ymin=1.5,
+            ymax=3.6,
+            alpha=0,
+            lwd=0.7,
+            col='black') +
+  labs(title='Elly De La Cruz Swing Probability Fastballs',
+       x='horizontal location (ft)',
+       y='vertical location (ft)') +
+  coord_fixed() +
+  theme_bw()
+
+# Create the plot for breaking balls
+swing_gam_break <- gam(swing ~ s(plate_x) + s(plate_z),
+                      family=binomial,
+                      data=df_total_breaking_balls)
+swing_predict_break <- expand.grid(plate_x=seq(-1.5, 1.5, length=50),
+                                  plate_z = seq(0.5, 5, length=50))
+swing_preds_break <- predict(swing_gam_break,
+                            newdata=swing_predict_break,
+                            type='response')
+swing_predict_break <- swing_predict_break |>
+  mutate(swing_prob=swing_preds_break)
+
+p_sp_break <- ggplot(data=swing_predict_break,
+                    aes(x=plate_x, y=plate_z))
+
+p_sp_break + geom_tile(aes(fill=swing_prob)) +
+  scale_fill_distiller("P(Swing)",
+                       palette='Spectral',
+                       direction=-1,
+                       limit=c(0,1)) +
+  geom_rect(xmin = -(plate_width/2)/12,
+            xmax=plate_width/2/12,
+            ymin=1.5,
+            ymax=3.6,
+            alpha=0,
+            lwd=0.7,
+            col='black') +
+  labs(title='Elly De La Cruz Swing Probability Breaking Balls',
+       x='horizontal location (ft)',
+       y='vertical location (ft)') +
+  coord_fixed() +
+  theme_bw()
+
+# Create the plot for off speed pitches
+swing_gam_offspeed <- gam(swing ~ s(plate_x) + s(plate_z),
+                      family=binomial,
+                      data=df_total_off_speeds)
+swing_predict_offspeed <- expand.grid(plate_x=seq(-1.5, 1.5, length=50),
+                                  plate_z = seq(0.5, 5, length=50))
+swing_preds_offspeed <- predict(swing_gam_offspeed,
+                            newdata=swing_predict_offspeed,
+                            type='response')
+swing_predict_offspeed <- swing_predict_offspeed |>
+  mutate(swing_prob=swing_preds_offspeed)
+
+p_sp_offspeed <- ggplot(data=swing_predict_offspeed,
+                    aes(x=plate_x, y=plate_z))
+
+p_sp_offspeed + geom_tile(aes(fill=swing_prob)) +
+  scale_fill_distiller("P(Swing)",
+                       palette='Spectral',
+                       direction=-1,
+                       limit=c(0,1)) +
+  geom_rect(xmin = -(plate_width/2)/12,
+            xmax=plate_width/2/12,
+            ymin=1.5,
+            ymax=3.6,
+            alpha=0,
+            lwd=0.7,
+            col='black') +
+  labs(title='Elly De La Cruz Swing Probability Offspeed Pitches',
+       x='horizontal location (ft)',
+       y='vertical location (ft)') +
+  coord_fixed() +
+  theme_bw()
+```
+#### Q1 **Discuss differences across all three plots**
+
+For fastballs, Elly is much more likely to swing if they are thrown high in the
+zone, even on pitches that mniss the strike zone by about a half a foot. He avoids
+balls low in the zone.
+
+For breaking balls, Elly is most likely to swing at pitches in the lower right
+hand corner of the zone and more likely to avoid pitches in the top left corner
+His swing zone dips below the strike zone and slightly to the right of the plate
+as well.
+
+For off-speed pitches, Elly is most likely to swing at pitches on the left-hand
+side of the zone, being also more likely to swing at slightly low pitches than
+slightly high pitches.
